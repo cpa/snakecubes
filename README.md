@@ -10,6 +10,8 @@ cargo build --release
 ./target/release/cubestring
 ```
 
+Pas d'IA utilisée à part pour résoudre quelques problèmes de borrow et de syntaxe.
+
 ## TODO
 - Optimiser l'algo
 - Générer les contraintes et passer ça à un SMT-solver
