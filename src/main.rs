@@ -1,24 +1,39 @@
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::thread;
+use std::time::Duration;
+
 struct Cube {
     cubelets: [Cubelet; 27],
 }
 
 struct Cubelet {
-    outface: Face
+    outface: Face,
 }
 
 enum Face {
-    Through, Turn(Rotation)
+    Through,
+    Turn(Rotation),
 }
 
 enum Rotation {
-    R1Pos, R1Neg, R2Pos, R2Neg
+    R1Pos,
+    R1Neg,
+    R2Pos,
+    R2Neg,
 }
 
 #[derive(Clone)]
 enum Direction {
-    XPos, XNeg, YPos, YNeg, ZPos, ZNeg
+    XPos,
+    XNeg,
+    YPos,
+    YNeg,
+    ZPos,
+    ZNeg,
 }
 
+#[inline]
 fn step(x: &mut i8, y: &mut i8, z: &mut i8, dir: &Direction) {
     match dir {
         Direction::XPos => *x += 1,
@@ -30,6 +45,7 @@ fn step(x: &mut i8, y: &mut i8, z: &mut i8, dir: &Direction) {
     }
 }
 
+#[inline]
 fn turned(cur: Direction, rot: &Rotation) -> Direction {
     match cur {
         Direction::XPos | Direction::XNeg => match rot {
@@ -53,6 +69,7 @@ fn turned(cur: Direction, rot: &Rotation) -> Direction {
     }
 }
 
+#[inline]
 fn coordinates(cube: &Cube) -> [(i8, i8, i8); 27] {
     let (mut cur_x, mut cur_y, mut cur_z) = (0, 0, 0);
     let mut cur_direction = Direction::XPos;
@@ -61,94 +78,181 @@ fn coordinates(cube: &Cube) -> [(i8, i8, i8); 27] {
     for (idx, cubelet) in cube.cubelets.iter().enumerate() {
         coords[idx] = (cur_x, cur_y, cur_z);
 
-        // compute outgoing direction for this cubelet
         cur_direction = match &cubelet.outface {
             Face::Through => cur_direction,
             Face::Turn(rot) => turned(cur_direction, rot),
         };
 
-        // step to next cubelet along outgoing direction
         step(&mut cur_x, &mut cur_y, &mut cur_z, &cur_direction);
     }
 
     coords
 }
 
-
+#[inline]
 fn is_solved(coords: [(i8, i8, i8); 27]) -> bool {
-    let (min, max) = coords[1..].iter().fold((coords[0], coords[0]), |(min, max), &p| {
-        (
-            (min.0.min(p.0), min.1.min(p.1), min.2.min(p.2)),
-            (max.0.max(p.0), max.1.max(p.1), max.2.max(p.2)),
-        )
-    });
-
-    if (max.0 - min.0) != 2 || (max.1 - min.1) != 2 || (max.2 - min.2) != 2 {
-        return false;
-    }
-
-    for i in 0..27 {
-        for j in (i + 1)..27 {
-            if coords[i] == coords[j] {
-                return false;
-            }
+    let (mut min_x, mut min_y, mut min_z) = (100, 100, 100);
+    let (mut max_x, mut max_y, mut max_z) = (-100, -100, -100);
+    for (x, y, z) in coords {
+        if x < min_x {
+            min_x = x;
+        }
+        if x > max_x {
+            max_x = x;
+        }
+        if y < min_y {
+            min_y = y;
+        }
+        if y > max_y {
+            max_y = y;
+        }
+        if z < min_z {
+            min_z = z;
+        }
+        if z > max_z {
+            max_z = z;
+        }
+        if (max_x - min_x) > 2 || (max_y - min_y) > 2 || (max_z - min_z) > 2 {
+            return false;
         }
     }
 
-    true
+    let mut seen = HashSet::with_capacity(coords.len());
+
+    (max_x - min_x) == 2
+        && (max_y - min_y) == 2
+        && (max_z - min_z) == 2
+        && coords.iter().all(|x| seen.insert(x))
+
 }
 
+fn solve(cube: &mut Cube, n: usize, counter: &AtomicUsize) {
+    counter.fetch_add(1, Ordering::Relaxed);
 
-fn solve(cube: &mut Cube, n: usize) -> () {
-
-    // println!("{}", n);
-
-    if is_solved(coordinates(&cube)) {
-        println!("{:?}", coordinates(&cube));
-        return ();
+    if is_solved(coordinates(cube)) {
+        println!("{:?}", coordinates(cube));
+        return;
     }
 
     if n == 27 {
-        return ();
+        return;
     }
 
     match &cube.cubelets[n].outface {
-        Face::Through => solve(cube, n+1),
+        Face::Through => solve(cube, n + 1, counter),
         Face::Turn(_rotation) => {
             cube.cubelets[n].outface = Face::Turn(Rotation::R1Neg);
-            solve(cube, n+1);
+            solve(cube, n + 1, counter);
             cube.cubelets[n].outface = Face::Turn(Rotation::R1Pos);
-            solve(cube, n+1);
+            solve(cube, n + 1, counter);
             cube.cubelets[n].outface = Face::Turn(Rotation::R2Neg);
-            solve(cube, n+1);
+            solve(cube, n + 1, counter);
             cube.cubelets[n].outface = Face::Turn(Rotation::R2Pos);
-            solve(cube, n+1);
+            solve(cube, n + 1, counter);
         }
     }
 }
 
 fn main() {
+    let counter = AtomicUsize::new(0);
+    let stop = AtomicBool::new(false);
 
+    // Our starting cubestring, as can be seen in pic1.jpg
     let mut cube = Cube {
         cubelets: [
-            Cubelet { outface: Face::Through }, Cubelet { outface: Face::Through }, 
-            Cubelet { outface: Face::Turn(Rotation::R1Pos) }, Cubelet { outface: Face::Through }, 
-            Cubelet { outface: Face::Turn(Rotation::R1Pos) }, Cubelet { outface: Face::Through }, 
-            Cubelet { outface: Face::Turn(Rotation::R1Pos) }, Cubelet { outface: Face::Through }, 
-            Cubelet { outface: Face::Turn(Rotation::R1Pos) }, Cubelet { outface: Face::Turn(Rotation::R1Pos) }, 
-            Cubelet { outface: Face::Turn(Rotation::R1Pos) }, Cubelet { outface: Face::Turn(Rotation::R1Pos) }, 
-            Cubelet { outface: Face::Through }, Cubelet { outface: Face::Turn(Rotation::R1Pos) }, 
-            Cubelet { outface: Face::Through }, Cubelet { outface: Face::Turn(Rotation::R1Pos) }, 
-            Cubelet { outface: Face::Turn(Rotation::R1Pos) }, Cubelet { outface: Face::Turn(Rotation::R1Pos) }, 
-            Cubelet { outface: Face::Through }, Cubelet { outface: Face::Turn(Rotation::R1Pos) }, 
-            Cubelet { outface: Face::Turn(Rotation::R1Pos) }, Cubelet { outface: Face::Through }, 
-            Cubelet { outface: Face::Turn(Rotation::R1Pos) }, Cubelet { outface: Face::Turn(Rotation::R1Pos) }, 
-            Cubelet { outface: Face::Turn(Rotation::R1Pos) }, Cubelet { outface: Face::Through }, 
-            Cubelet { outface: Face::Through }]
+            Cubelet {
+                outface: Face::Through,
+            },
+            Cubelet {
+                outface: Face::Through,
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Through,
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Through,
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Through,
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Through,
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Through,
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Through,
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Through,
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Turn(Rotation::R1Pos),
+            },
+            Cubelet {
+                outface: Face::Through,
+            },
+            Cubelet {
+                outface: Face::Through,
+            },
+        ],
     };
 
-    println!("{:?}", coordinates(&cube));
-    println!("{}", is_solved(coordinates(&cube)));
+    thread::scope(|s| {
+        s.spawn(|| {
+            while !stop.load(Ordering::Relaxed) {
+                println!("Counter: {}", counter.load(Ordering::Relaxed));
+                thread::sleep(Duration::from_secs(3));
+            }
+        });
+        solve(&mut cube, 0, &counter);
+        stop.store(true, Ordering::Relaxed);
+    });
 
-    solve(&mut cube, 0);
 }

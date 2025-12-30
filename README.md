@@ -8,14 +8,18 @@ Ce dépôt contient un programme rust qui explore et valide les configurations p
 ```bash
 cargo build --release
 ./target/release/cubestring
+# OR
+RUSTFLAGS="-C debuginfo=2 -C force-frame-pointers=yes" cargo build --profile profiling
+samply record -- target/profiling/cubestring
 ```
 
-Pas d'IA utilisée à part pour résoudre quelques problèmes de borrow et de syntaxe.
+Pas d'IA utilisée à part pour résoudre quelques problèmes de borrow et de syntaxe. Pourtant la tentation était grande.
 
 ## TODO
 - Optimiser l'algo
 - Générer les contraintes et passer ça à un SMT-solver
 - Visualiser la recherche
+- La modélisation avec les rotation est vraiment pourrie, on ne peut éviter facilement de créer un chemin qui ne repasse pas par une coordonnée déjà utilisée
 
 ![Cordelette et cubes](pic1.jpg)
 
